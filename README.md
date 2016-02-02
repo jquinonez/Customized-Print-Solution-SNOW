@@ -1,4 +1,4 @@
-# Customized-Print-Solution-SNOW
+# Customized-Print-Solution-ServiceNow
 Objective: To create a Custom PDF of any record/form/page in ServiceNow. We have used MidServer to create the PDF and attach back to the record. Currently we have the facility to create a standard Pdf from the record. But this solution could be used to create any kind of custom Pdf and populate values from the record.
 
 Key points: 
