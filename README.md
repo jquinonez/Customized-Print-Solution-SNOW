@@ -35,7 +35,7 @@ Kindly restart your mid server once the JAR file have been installed.
 
 4. Next is the creation of business rule on ECC queue table with condition current.topic ==”AttachmentCreator” 
 
-The code for the business rule is checked into trunk as AttachmentCreator.
+   The code for the business rule is checked into trunk as AttachmentCreator.
 
 5. Once you create the business rule, you can create the UI action to generate the PDF out of any form.
 The sample code to do that is enlisted under the file UIButtonAction.
