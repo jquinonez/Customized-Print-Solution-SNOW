@@ -1,0 +1,36 @@
+if(typeof window == 'undefined')
+	runBusRuleCode();
+
+/*Server-side function to generate the Custom UI Pdf
+and attach it to the record */
+
+function runBusRuleCode(){
+	var gc = new GlideController();
+	var form = GlideForm(gc, 'your custom UI page Name'); // UI page is passed to the form
+	form.putParameter("sysparm_id", current.sys_id); // Parameters to send sys id and other values
+	// This function ensures only the UI page is sent and no extra styles or scripts
+	form.setDirect(true); 
+	var htmlResponse =  form.getRenderedPage(); // Gets the custom ui page as bytes
+	
+	var jspr = new JavascriptProbe(gs.getProperty("mid.custom.print_server_name"));	
+	//We need to define the above property in sys_properties for the server name to work in each instance
+	jspr.setName('GenerateAndAttachPDFRecord'); //Name of the javascript probe
+	
+	//Set up the parameters for the MID Server Script Include to use
+	
+	var userDomain  =  gs.getProperty('instance_name') + ".service-now.com";
+	jspr.addParameter("httpDomain", userDomain); // your instance URL
+	jspr.addParameter("httpDomainPort", "443"); 
+	jspr.addParameter("httpProtocol", "https");
+	jspr.addParameter("verbose", "true");
+	jspr.addParameter("filename", current.sys_id);
+	jspr.addParameter("tablename", current.sys_class_name );
+	jspr.addParameter("pdfFileName", "PDFFile" );
+	jspr.addParameter("htmlResponse", htmlResponse);
+	
+	//This is where we are calling our MID Server Script Include
+	jspr.setJavascript('var pdf = new GenerateAndAttachPDFRecord(); res = pdf.execute();');
+	jspr.create();
+	
+	action.setRedirectURL(current);
+}
