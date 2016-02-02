@@ -1,0 +1,153 @@
+var GenerateAndAttachPDFRecord = Class.create();
+
+GenerateAndAttachPDFRecord.prototype = {
+	
+	initialize: function () {
+		//
+		// Set up the Packages references
+		//
+		this.File = Packages.java.io.File;
+		this.StringWriter = Packages.java.io.StringWriter;
+		this.FileOutputStream = Packages.java.io.FileOutputStream;
+		this.ByteArrayOutputStream = Packages.java.io.ByteArrayOutputStream;
+		this.ByteArrayInputStream = Packages.java.io.ByteArrayInputStream;
+		this.HttpClient = Packages.org.apache.commons.httpclient.HttpClient;
+		this.UsernamePasswordCredentials = Packages.org.apache.commons.httpclient.UsernamePasswordCredentials;
+		this.Protocol =  Packages.org.apache.commons.httpclient.protocol.Protocol;
+		this.SSLProtocolSocketFactory =   Packages.org.apache.commons.httpclient.protocol.SSLProtocolSocketFactory;
+		this.AuthScope = Packages.org.apache.commons.httpclient.auth.AuthScope;
+		this.GetMethod = Packages.org.apache.commons.httpclient.methods.GetMethod;
+		this.PostMethod = Packages.org.apache.commons.httpclient.methods.PostMethod;
+		this.StringUtil = Packages.com.glide.util.StringUtil;
+		this.StringEntity = Packages.org.apache.http.entity.StringEntity;
+		this.SimpleDateFormat = Packages.java.text.SimpleDateFormat;
+		this.TimeZone = Packages.java.util.TimeZone;
+		this.Date = Packages.java.util.Date;
+		
+		// Flying saucer jar references
+		//
+		this.tidy =  Packages.org.w3c.tidy.Tidy;
+		this.domDocument = Packages.org.w3c.dom.Document;
+		this.XHTMLPanel =  Packages.org.xhtmlrenderer.simple.XHTMLPanel;
+		this.iTextRenderer = Packages.org.xhtmlrenderer.pdf.ITextRenderer;
+		//Set up the parameters
+		//
+		
+		this.domain = probe.getParameter("httpDomain");
+		this.port = probe.getParameter("httpDomainPort");
+		this.protocol = probe.getParameter("httpProtocol"); //http/https
+		this.verbose = probe.getParameter("verbose");
+		this.filename = probe.getParameter("filename");
+		this.tablename = probe.getParameter("tablename");
+		this.pdfFileName = probe.getParameter("pdfFileName");
+		this.htmlResponse = probe.getParameter("htmlResponse");
+		
+		
+	},
+	
+	
+	
+	
+	execute: function () {
+		/*
+		// Set up the HTTP Connection.  We will be using the connection to send the PDF byte stream to
+		// ECC queue for final processing.
+ 		*/
+		var client = new this.HttpClient(); // initializing http client
+		var config = Packages.com.service_now.mid.services.Config.get();
+		/* using the config tool to avoid hard coding of username and password as we port to different instance */
+		var user =    config.getProperty("mid.instance.username");  
+		var password = config.getProperty("mid.instance.password");
+		
+		client.getHostConfiguration().setHost(this.domain, 443);
+		var authScope = new this.AuthScope(this.domain, this.port, null);
+		var credentials = new this.UsernamePasswordCredentials(user, password);
+		client.getState().setCredentials(authScope, credentials);
+		
+		// Converting the input html response to output byte stream
+		
+		var bos = new this.ByteArrayOutputStream();
+		var inputString = this.htmlResponse;
+		this.debug("HTML RESPONSE" + inputString);
+		var inputStream = new this.ByteArrayInputStream(inputString.getBytes());
+		
+		var outputForPdfStream  = new this.ByteArrayOutputStream();
+		
+		// tidy the html
+		var domdoc =  this.domDocument;
+		var iTidy = new this.tidy();
+		iTidy.setShowWarnings(false);
+		iTidy.setXmlTags(false);
+		iTidy.setInputEncoding("UTF-8");
+		iTidy.setOutputEncoding("UTF-8");
+		iTidy.setXHTML(true);//
+		iTidy.setMakeClean(true);
+		domdoc = iTidy.parseDOM(inputStream, outputForPdfStream);
+		
+		// Convert the document to XHTML panel and then rendering it into a PDF
+
+		var xhtmlPanel = new this.XHTMLPanel();
+		xhtmlPanel.setDocument(domdoc);
+		
+		
+		var renderer = new this.iTextRenderer();
+		renderer.setDocument(xhtmlPanel.getDocument(), null);
+		renderer.layout();
+		renderer.createPDF(bos);
+		bos.flush();
+		inputStream.close();
+		this.debug("INPUT STREAM" + inputStream);
+		
+		var byteArray = bos.toByteArray();
+		var encodedString  = this.StringUtil.base64Encode(byteArray);
+		this.debug("Encoded String" + encodedString);
+		
+		
+		// Code below is used to Post the data back to ECC
+		var postURL = this.protocol + "://" + this.domain + "/ecc_queue.do?JSONv2&sysparm_action=insert";
+		this.debug("Post URL: " + postURL);
+		var post = this.PostMethod(postURL);
+		post.addHeader("Content-Type", "application/json");
+		post.addHeader("Accept", "application/json");
+		var timeStamp =  this.isoNow("US/Pacific");
+		this.debig("TimeStamp" +  timeStamp);
+		var pdfFileName = this.pdfFileName + "-" + timeStamp + ".pdf?application/pdf";
+		var source =  this.tablename + ":" + this.filename;
+		var obj = {
+			"agent" : "AttachmentCreator",
+			"topic": "AttachmentCreator",
+			"name":  pdfFileName,
+			"source": source,
+			"payload": encodedString
+		};
+		var jsonText = JSON.stringify(obj);
+		this.debug("JSON: " + jsonText);
+		var stringEntity =  new this.StringEntity(jsonText);
+		this.debug("String Entity" + stringEntity);
+		post.setRequestBody(jsonText);
+		post.setDoAuthentication(true);
+		var status = client.executeMethod(post);
+		this.debug("Post Status: " + status);
+		this.debug("Post Response" +  post.getResponseBodyAsString());
+		post.releaseConnection();
+		
+		return true;
+	},
+	isoNow: function(tz) {
+		// this function time stamps so that each generation of PDF is unique
+		var date = new this.Date();
+		var format = "yyyy-MM-dd'T'HH:mm:ssZ";
+		var tz = this.TimeZone.getTimeZone(tz);
+		var f = new this.SimpleDateFormat(format);
+		f.setTimeZone(tz);
+		return f.format(date);
+	},
+	
+	debug: function (m) {
+		if (this.verbose == "true") {
+			ms.log(m);
+		}
+	},
+	
+	type: GenerateAndAttachPDFRecord
+};
